@@ -99,6 +99,11 @@
     padding: 14px 0;
   }
   li + li { border-top: 1px dotted var(--rule); }
+  li.has-detail { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  li.has-detail:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+  @media (hover: hover) {
+    li.has-detail:hover .name { color: var(--accent); }
+  }
   .photo {
     flex: none;
     align-self: center;
@@ -131,11 +136,11 @@
     white-space: nowrap;
   }
 
-  li.last .tag { color: var(--accent); }
+  li.last .tag, .detail-head.last .tag { color: var(--accent); }
   li.soldout .name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
-  li.soldout .tag { color: var(--muted); }
+  li.soldout .tag, .detail-head.soldout .tag { color: var(--muted); }
   li.soldout .photo { filter: grayscale(1); opacity: 0.45; }
-  li.unknown .tag { color: var(--muted); }
+  li.unknown .tag, .detail-head.unknown .tag { color: var(--muted); }
 
   footer {
     text-align: center;
@@ -147,6 +152,51 @@
   .status { min-height: 1.6em; }
 
   .loading { text-align: center; color: var(--muted); padding: 48px 0; }
+
+  body:has(dialog[open]) { overflow: hidden; }
+  dialog {
+    width: min(520px, calc(100% - 32px));
+    max-height: calc(100dvh - 32px);
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: var(--paper);
+    color: var(--ink);
+    overflow: auto;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+  }
+  dialog::backdrop { background: rgba(28, 22, 18, 0.6); }
+  dialog[open] { animation: rise 0.22s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } }
+  @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } }
+  .detail-photo {
+    display: block;
+    width: 100%;
+    max-height: 62dvh;
+    object-fit: cover;
+    background: var(--rule);
+  }
+  .detail-body { padding: 24px 24px 28px; }
+  .detail-head { display: flex; align-items: baseline; gap: 12px; }
+  .detail-head h3 { font-size: 22px; font-weight: 600; margin: 0; flex: 1; }
+  .detail-head .tag, .detail-head .qty { flex: none; }
+  .detail-note { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
+  .detail-desc { margin: 16px 0 0; line-height: 1.8; }
+  .detail-desc:empty { display: none; }
+  .close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.85);
+    color: #2b2420;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -159,6 +209,16 @@
 
   <div id="menu" aria-live="polite"><p class="loading">載入中…</p></div>
 
+  <dialog id="detail" aria-labelledby="detail-name">
+    <button class="close" type="button" aria-label="關閉">×</button>
+    <img class="detail-photo" id="detail-photo" alt="">
+    <div class="detail-body">
+      <div class="detail-head" id="detail-head"><h3 id="detail-name"></h3></div>
+      <p class="detail-note" id="detail-note"></p>
+      <p class="detail-desc" id="detail-desc"></p>
+    </div>
+  </dialog>
+
   <footer>
     <p class="status" id="status"></p>
     <p>數量每分鐘自動更新，實際以現場為準</p>
@@ -169,6 +229,32 @@
   const SHEET_ID = "1qXBVUzLcjmW4YT7j1vZSWf930VnqcWEnAZJYrZztEMA";
   const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
   const REFRESH_MS = 60 * 1000;
+  // Optional tab in the same sheet: column A 蛋糕名稱, column B 介紹. Overrides DESCRIPTIONS below.
+  const DESC_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent("介紹")}`;
+
+  const DESCRIPTIONS = {
+    "紅絲絨": "經典紅絲絨蛋糕體，層層夾入白色奶霜，口感濕潤綿密。",
+    "亮晶晴藍莓": "藍莓慕斯與蛋糕層層相疊，頂端點綴奶油花，酸甜清爽。",
+    "瑞士頂級巧克力": "巧克力蛋糕與巧克力慕斯多層堆疊，濃郁而不膩口。",
+    "檸檬香草起士": "檸檬的清新酸香搭配香草起士，滑順清爽。",
+    "肉桂卷": "捲得紮實的肉桂卷，香氣溫暖，適合配一杯咖啡。",
+    "生巧克力蛋糕": "濃密綿滑，宛如生巧克力般入口即化。",
+    "紐約起士": "扎實濃郁的經典重乳酪蛋糕，奶香十足。",
+    "法式蘋果塔": "酥脆塔皮盛裝蘋果內餡，果香與奶油香交織。",
+    "肯亞伯爵茶波士頓": "帶著伯爵茶香的波士頓派，蛋糕體夾入綿密奶餡，茶香優雅。",
+    "德國黑森林": "巧克力蛋糕、鮮奶油與櫻桃的經典組合，頂端飾以巧克力片。",
+    "森半抹茶波士頓": "使用森半抹茶，抹茶蛋糕體夾入綿密奶餡，微苦回甘。",
+    "古典巧克力": "口感濃厚紮實的古典巧克力蛋糕，可可香氣飽滿。",
+    "綜合水果達克瓦茲(水果根據季節變動)": "外酥內軟的達克瓦茲夾入奶餡與新鮮水果，水果依季節變動。",
+    "南洋開心果蛋糕": "開心果風味蛋糕，堅果香氣濃郁，色澤清新。",
+    "水果起士(山茶花)": "滑順的起士蛋糕鋪上新鮮水果，酸甜平衡。",
+    "水果塔": "酥脆塔皮填入奶餡，鋪滿繽紛新鮮水果。",
+    "檸檬起司球": "圓潤可愛的起司球，帶著檸檬的清新酸香。",
+    "桂花春茶": "桂花與春茶的淡雅香氣，口感輕盈。",
+    "法式千層蛋糕": "薄餅與奶餡一層層堆疊，口感細緻柔軟。",
+    "橘丁核桃布朗尼": "濃郁的巧克力布朗尼，加入橘丁與核桃，香氣與口感層次豐富。",
+  };
+  let sheetDescriptions = {};
 
   // Photos extracted from the sheet's 蛋糕圖片 column, keyed by cake name.
   const PHOTOS = {
@@ -243,7 +329,7 @@
     const photo = PHOTOS[rawName];
     if (photo) {
       const img = el("img", "photo");
-      img.src = `img/${photo}.jpg`;
+      img.src = `img/thumb/${photo}.jpg`;
       img.alt = title;
       img.loading = "lazy";
       img.width = img.height = 72;
@@ -254,24 +340,56 @@
     if (m) nameWrap.append(el("span", "note", m[2]));
     li.append(nameWrap, el("span", "leader"));
 
-    const n = rawQty === "" ? NaN : Number(rawQty);
-    if (Number.isNaN(n)) {
-      li.classList.add("unknown");
-      li.append(el("span", "tag", "請洽店員"));
-    } else if (n <= 0) {
-      li.classList.add("soldout");
-      li.append(el("span", "tag", "已售完"));
-    } else {
-      if (n === 1) {
-        li.classList.add("last");
-        li.append(el("span", "tag", "最後一個"));
-      }
-      const q = el("span", "qty", String(n));
-      q.append(el("small", null, "個"));
-      li.append(q);
+    const { state, nodes } = stockNodes(rawQty);
+    if (state) li.classList.add(state);
+    li.append(...nodes);
+
+    if (photo || describe(rawName)) {
+      li.classList.add("has-detail");
+      li.tabIndex = 0;
+      li.setAttribute("role", "button");
+      li.setAttribute("aria-haspopup", "dialog");
+      const open = () => openDetail(rawName, rawQty);
+      li.addEventListener("click", open);
+      li.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      });
     }
     return li;
   }
+
+  function stockNodes(rawQty) {
+    const n = rawQty === "" ? NaN : Number(rawQty);
+    if (Number.isNaN(n)) return { state: "unknown", nodes: [el("span", "tag", "請洽店員")] };
+    if (n <= 0) return { state: "soldout", nodes: [el("span", "tag", "已售完")] };
+    const q = el("span", "qty", String(n));
+    q.append(el("small", null, "個"));
+    return n === 1
+      ? { state: "last", nodes: [el("span", "tag", "最後一個"), q] }
+      : { state: "", nodes: [q] };
+  }
+
+  const describe = name => sheetDescriptions[name] || DESCRIPTIONS[name] || "";
+
+  const dialog = document.getElementById("detail");
+  function openDetail(rawName, rawQty) {
+    const m = rawName.match(/^(.*?)\s*[（(](.+)[)）]\s*$/);
+    const photo = PHOTOS[rawName];
+    const img = document.getElementById("detail-photo");
+    img.hidden = !photo;
+    if (photo) { img.src = `img/${photo}.jpg`; img.alt = m ? m[1] : rawName; }
+    document.getElementById("detail-name").textContent = m ? m[1] : rawName;
+    document.getElementById("detail-note").textContent = m ? m[2] : "";
+    document.getElementById("detail-desc").textContent = describe(rawName);
+    const head = document.getElementById("detail-head");
+    head.replaceChildren(head.firstElementChild);
+    const { state, nodes } = stockNodes(rawQty);
+    head.append(...nodes);
+    head.className = "detail-head " + state;
+    dialog.showModal();
+  }
+  dialog.querySelector(".close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
 
   function render(groups) {
     const menu = document.getElementById("menu");
@@ -306,6 +424,22 @@
     }
   }
 
+  async function loadDescriptions() {
+    try {
+      const res = await fetch(DESC_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const rows = parseCSV(await res.text());
+      // gviz silently returns the first tab when 介紹 doesn't exist; require its header.
+      if (!rows.some(r => (r[0] || "").trim() === "蛋糕名稱" && (r[1] || "").trim() === "介紹")) return;
+      const map = {};
+      for (const [name = "", desc = ""] of rows) {
+        if (name.trim() && desc.trim() && name.trim() !== "蛋糕名稱") map[name.trim()] = desc.trim();
+      }
+      sheetDescriptions = map;
+    } catch (err) {}
+  }
+
+  loadDescriptions();
   load();
   setInterval(load, REFRESH_MS);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
