@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今日蛋糕</title>
+<meta name="description" content="今日蛋糕菜單與即時剩餘數量">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Noto+Serif+TC:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f6f1e8;
+    --ink: #2b2420;
+    --muted: #8a7f74;
+    --rule: #d9cfc1;
+    --accent: #a4462f;
+    --serif-en: "Cormorant Garamond", Georgia, serif;
+    --serif-tc: "Noto Serif TC", "Songti TC", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d1916;
+      --ink: #efe7db;
+      --muted: #9a8f83;
+      --rule: #3a332d;
+      --accent: #e08a6d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d1916;
+    --ink: #efe7db;
+    --muted: #9a8f83;
+    --rule: #3a332d;
+    --accent: #e08a6d;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif-tc);
+    line-height: 1.6;
+  }
+  .page {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 72px 20px 96px;
+  }
+
+  header { text-align: center; margin-bottom: 56px; }
+  .eyebrow {
+    font-family: var(--serif-en);
+    font-style: italic;
+    font-size: 20px;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-weight: 600;
+    font-size: clamp(34px, 8vw, 46px);
+    letter-spacing: 0.3em;
+    margin: 0 0 0 0.3em; /* offset trailing letter-spacing so it centres */
+  }
+  .ornament {
+    display: block;
+    width: 48px;
+    height: 1px;
+    background: var(--accent);
+    margin: 24px auto 0;
+  }
+
+  section { margin-bottom: 48px; }
+  .group-label {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: var(--serif-en);
+    font-size: 15px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .group-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 14px 0;
+  }
+  li + li { border-top: 1px dotted var(--rule); }
+  .name { font-size: 18px; }
+  .note { display: block; font-size: 13px; color: var(--muted); }
+  .leader { flex: 1; }
+  .qty {
+    font-family: var(--serif-en);
+    font-size: 22px;
+    white-space: nowrap;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  .qty small {
+    font-family: var(--serif-tc);
+    font-size: 13px;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+  .tag {
+    font-family: var(--serif-tc);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  li.last .tag { color: var(--accent); }
+  li.soldout .name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+  li.soldout .tag { color: var(--muted); }
+  li.unknown .tag { color: var(--muted); }
+
+  footer {
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 64px;
+  }
+  footer p { margin: 4px 0; }
+  .status { min-height: 1.6em; }
+
+  .loading { text-align: center; color: var(--muted); padding: 48px 0; }
+</style>
+</head>
+<body>
+<main class="page">
+  <header>
+    <p class="eyebrow">Today's Cakes</p>
+    <h1>今日蛋糕</h1>
+    <span class="ornament" aria-hidden="true"></span>
+  </header>
+
+  <div id="menu" aria-live="polite"><p class="loading">載入中…</p></div>
+
+  <footer>
+    <p class="status" id="status"></p>
+    <p>數量每分鐘自動更新，實際以現場為準</p>
+  </footer>
+</main>
+
+<script>
+  const SHEET_ID = "1qXBVUzLcjmW4YT7j1vZSWf930VnqcWEnAZJYrZztEMA";
+  const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
+  const REFRESH_MS = 60 * 1000;
+
+  // Snapshot shown when the sheet can't be reached (offline, blocked, etc.)
+  const FALLBACK = [
+    { label: "1-1", items: [["紅絲絨", "1"], ["亮晶晴藍莓", "2"], ["瑞士頂級巧克力", "3"], ["檸檬香草起士", "0"]] },
+    { label: "1-2", items: [["肉桂卷", "1"], ["生巧克力蛋糕", "0"], ["紐約起士", "0"], ["法式蘋果塔", "0"]] },
+    { label: "2", items: [["肉桂卷", "3"], ["肯亞伯爵茶波士頓", "0"], ["德國黑森林", "3"], ["森半抹茶波士頓", "3"], ["古典巧克力", "3"]] },
+    { label: "3", items: [["綜合水果達克瓦茲(水果根據季節變動)", "4"], ["南洋開心果蛋糕", "0"], ["水果起士(山茶花)", "3"], ["水果塔", "0"]] },
+    { label: "4", items: [["檸檬起司球", "0"], ["桂花春茶", "3"], ["法式千層蛋糕", ""], ["橘丁核桃布朗尼", ""]] },
+  ];
+
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], field = "", quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') quoted = false;
+        else field += c;
+      } else if (c === '"') quoted = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); rows.push(row); row = []; field = "";
+      } else field += c;
+    }
+    if (field || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  // The sheet lays groups side by side, 4 columns each: label | 名稱 | 圖片 | 剩餘個數.
+  function toGroups(rows) {
+    const width = Math.max(0, ...rows.map(r => r.length));
+    const groups = [];
+    for (let c = 0; c + 1 < width; c += 4) {
+      let label = "";
+      const items = [];
+      for (const r of rows) {
+        const name = (r[c + 1] || "").trim();
+        if (!label && (r[c] || "").trim()) label = r[c].trim();
+        if (!name || name === "蛋糕名稱") continue;
+        items.push([name, (r[c + 3] || "").trim()]);
+      }
+      if (items.length) groups.push({ label: label || String(groups.length + 1), items });
+    }
+    return groups;
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function renderItem([rawName, rawQty]) {
+    const li = el("li");
+    // Split a trailing parenthetical note, e.g. "水果起士(山茶花)"
+    const m = rawName.match(/^(.*?)\s*[（(](.+)[)）]\s*$/);
+    const nameWrap = el("span", "name", m ? m[1] : rawName);
+    if (m) nameWrap.append(el("span", "note", m[2]));
+    li.append(nameWrap, el("span", "leader"));
+
+    const n = rawQty === "" ? NaN : Number(rawQty);
+    if (Number.isNaN(n)) {
+      li.classList.add("unknown");
+      li.append(el("span", "tag", "請洽店員"));
+    } else if (n <= 0) {
+      li.classList.add("soldout");
+      li.append(el("span", "tag", "已售完"));
+    } else {
+      if (n === 1) {
+        li.classList.add("last");
+        li.append(el("span", "tag", "最後一個"));
+      }
+      const q = el("span", "qty", String(n));
+      q.append(el("small", null, "個"));
+      li.append(q);
+    }
+    return li;
+  }
+
+  function render(groups) {
+    const menu = document.getElementById("menu");
+    menu.replaceChildren(...groups.map(g => {
+      const s = el("section");
+      s.append(el("h2", "group-label", "No. " + g.label));
+      const ul = el("ul");
+      ul.append(...g.items.map(renderItem));
+      s.append(ul);
+      return s;
+    }));
+  }
+
+  function setStatus(text) { document.getElementById("status").textContent = text; }
+  const timeNow = () => new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
+
+  let hasLive = false;
+  async function load() {
+    try {
+      const res = await fetch(SHEET_URL + "&_=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      const groups = toGroups(parseCSV(await res.text()));
+      if (!groups.length) throw new Error("empty");
+      render(groups);
+      hasLive = true;
+      setStatus("更新於 " + timeNow());
+    } catch (err) {
+      if (!hasLive) {
+        render(FALLBACK);
+        setStatus("暫時無法連線，顯示的是先前的資料");
+      }
+    }
+  }
+
+  load();
+  setInterval(load, REFRESH_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+</script>
+</body>
+</html>
