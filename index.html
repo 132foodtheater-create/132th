@@ -94,11 +94,21 @@
   ul { list-style: none; margin: 0; padding: 0; }
   li {
     display: flex;
-    align-items: baseline;
-    gap: 12px;
+    align-items: center;
+    gap: 16px;
     padding: 14px 0;
   }
   li + li { border-top: 1px dotted var(--rule); }
+  .photo {
+    flex: none;
+    align-self: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: var(--rule);
+  }
+  .text { align-self: center; }
   .name { font-size: 18px; }
   .note { display: block; font-size: 13px; color: var(--muted); }
   .leader { flex: 1; }
@@ -124,6 +134,7 @@
   li.last .tag { color: var(--accent); }
   li.soldout .name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
   li.soldout .tag { color: var(--muted); }
+  li.soldout .photo { filter: grayscale(1); opacity: 0.45; }
   li.unknown .tag { color: var(--muted); }
 
   footer {
@@ -158,6 +169,17 @@
   const SHEET_ID = "1qXBVUzLcjmW4YT7j1vZSWf930VnqcWEnAZJYrZztEMA";
   const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=0`;
   const REFRESH_MS = 60 * 1000;
+
+  // Photos extracted from the sheet's 蛋糕圖片 column, keyed by cake name.
+  const PHOTOS = {
+    "紅絲絨": "red-velvet", "亮晶晴藍莓": "blueberry", "瑞士頂級巧克力": "swiss-chocolate",
+    "檸檬香草起士": "lemon-vanilla-cheese", "肉桂卷": "cinnamon-roll", "生巧克力蛋糕": "nama-chocolate",
+    "紐約起士": "new-york-cheese", "法式蘋果塔": "apple-tart", "肯亞伯爵茶波士頓": "earl-grey-boston",
+    "德國黑森林": "black-forest", "森半抹茶波士頓": "matcha-boston", "古典巧克力": "classic-chocolate",
+    "綜合水果達克瓦茲(水果根據季節變動)": "fruit-dacquoise", "南洋開心果蛋糕": "pistachio",
+    "水果起士(山茶花)": "fruit-cheese", "水果塔": "fruit-tart", "檸檬起司球": "lemon-cheese-ball",
+    "桂花春茶": "osmanthus-tea", "法式千層蛋糕": "mille-crepe", "橘丁核桃布朗尼": "orange-walnut-brownie",
+  };
 
   // Snapshot shown when the sheet can't be reached (offline, blocked, etc.)
   const FALLBACK = [
@@ -217,7 +239,18 @@
     const li = el("li");
     // Split a trailing parenthetical note, e.g. "水果起士(山茶花)"
     const m = rawName.match(/^(.*?)\s*[（(](.+)[)）]\s*$/);
-    const nameWrap = el("span", "name", m ? m[1] : rawName);
+    const title = m ? m[1] : rawName;
+    const photo = PHOTOS[rawName];
+    if (photo) {
+      const img = el("img", "photo");
+      img.src = `img/${photo}.jpg`;
+      img.alt = title;
+      img.loading = "lazy";
+      img.width = img.height = 72;
+      li.append(img);
+    }
+    const nameWrap = el("span", "text");
+    nameWrap.append(el("span", "name", title));
     if (m) nameWrap.append(el("span", "note", m[2]));
     li.append(nameWrap, el("span", "leader"));
 
