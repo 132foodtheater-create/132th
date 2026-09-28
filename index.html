@@ -307,13 +307,34 @@
         const name = (r[c + 1] || "").trim();
         if (!label && (r[c] || "").trim()) label = r[c].trim();
         if (!name || name === "蛋糕名稱") continue;
+                const pic = (r[c + 2] || "").trim();
+        if (pic) PHOTOS[name] = pic;
         items.push([name, (r[c + 3] || "").trim()]);
       }
       if (items.length) groups.push({ label: label || String(groups.length + 1), items });
     }
     return groups;
   }
-
+  function driveId(v) {
+    if (!/drive\.google\.com|docs\.google\.com/.test(v)) return "";
+    return (v.match(/\/d\/([\w-]+)/) || v.match(/[?&]id=([\w-]+)/) || [])[1] || "";
+  }
+  function thumbSrc(p) {
+    if (/^https?:/i.test(p)) {
+      const id = driveId(p);
+      return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w300` : p;
+    }
+    if (/\.\w+$/.test(p)) return encodeURI(p);
+    return `img/thumb/${p}.jpg`;
+  }
+  function fullSrc(p) {
+    if (/^https?:/i.test(p)) {
+      const id = driveId(p);
+      return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w1200` : p;
+    }
+    if (/\.\w+$/.test(p)) return encodeURI(p);
+    return `img/${p}.jpg`;
+  }
   function el(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -329,7 +350,7 @@
     const photo = PHOTOS[rawName];
     if (photo) {
       const img = el("img", "photo");
-      img.src = `img/thumb/${photo}.jpg`;
+      img.src = thumbSrc(photo);
       img.alt = title;
       img.loading = "lazy";
       img.width = img.height = 72;
@@ -377,7 +398,7 @@
     const photo = PHOTOS[rawName];
     const img = document.getElementById("detail-photo");
     img.hidden = !photo;
-    if (photo) { img.src = `img/${photo}.jpg`; img.alt = m ? m[1] : rawName; }
+    if (photo) { img.src = fullSrc(photo); img.alt = m ? m[1] : rawName; }
     document.getElementById("detail-name").textContent = m ? m[1] : rawName;
     document.getElementById("detail-note").textContent = m ? m[2] : "";
     document.getElementById("detail-desc").textContent = describe(rawName);
