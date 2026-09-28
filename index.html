@@ -141,7 +141,28 @@
   li.soldout .tag, .detail-head.soldout .tag { color: var(--muted); }
   li.soldout .photo { filter: grayscale(1); opacity: 0.45; }
   li.unknown .tag, .detail-head.unknown .tag { color: var(--muted); }
-
+  .tabs {
+    display: flex; gap: 4px; margin: -28px 0 0; overflow-x: auto;
+    border-bottom: 1px solid var(--rule); scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: none; font: inherit; font-size: 15px; letter-spacing: 0.08em;
+    padding: 9px 18px; color: var(--muted); background: none; border: 0;
+    border-radius: 10px 10px 0 0; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .tab[aria-selected="true"] {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 7%, var(--paper));
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  @media (hover: hover) { .tab:hover { color: var(--ink); } }
+  .hint {
+    text-align: center; font-size: 13px; letter-spacing: 0.05em;
+    color: color-mix(in srgb, var(--ink) 60%, var(--paper));
+    margin: 16px 0 28px;
+  }
   footer {
     text-align: center;
     font-size: 13px;
@@ -206,7 +227,8 @@
     <h1>今日蛋糕</h1>
     <span class="ornament" aria-hidden="true"></span>
   </header>
-
+  <nav class="tabs" id="tabs" role="tablist" aria-label="蛋糕分類"></nav>
+  <p class="hint">點擊圖片可放大，並查看蛋糕介紹</p>
   <div id="menu" aria-live="polite"><p class="loading">載入中…</p></div>
 
   <dialog id="detail" aria-labelledby="detail-name">
@@ -412,16 +434,51 @@
   dialog.querySelector(".close").addEventListener("click", () => dialog.close());
   dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
 
+    // ── 分頁：要新增固定條件的分頁，就在這裡加一行 ──
+  const BASE_TABS = [
+    { id: "all", label: "全部", test: () => true },
+    { id: "available", label: "供應中", test: ([, qty]) => stockNodes(qty).state !== "soldout" },
+  ];
+  // 分類預設值；Sheet「介紹」分頁 C 欄「分類」有填的話以 Sheet 為準
+  const TAGS = {
+    "瑞士頂級巧克力": ["巧克力系列"], "生巧克力蛋糕": ["巧克力系列"], "古典巧克力": ["巧克力系列"],
+    "德國黑森林": ["巧克力系列"], "橘丁核桃布朗尼": ["巧克力系列"],
+  };
+  let sheetTags = {}, lastGroups = [], activeTab = "all";
+  const tagsOf = name => (sheetTags[name] && sheetTags[name].length ? sheetTags[name] : TAGS[name]) || [];
+
+  function buildTabs(groups) {
+    const tags = [];
+    for (const g of groups) for (const [name] of g.items)
+      for (const t of tagsOf(name)) if (!tags.includes(t)) tags.push(t);
+    return [...BASE_TABS, ...tags.map(t => ({ id: "tag:" + t, label: t, test: ([name]) => tagsOf(name).includes(t) }))];
+  }
+
   function render(groups) {
-    const menu = document.getElementById("menu");
-    menu.replaceChildren(...groups.map(g => {
+    lastGroups = groups;
+    const tabs = buildTabs(groups);
+    if (!tabs.some(t => t.id === activeTab)) activeTab = "all";
+    document.getElementById("tabs").replaceChildren(...tabs.map(t => {
+      const b = el("button", "tab", t.label);
+      b.type = "button";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(t.id === activeTab));
+      b.addEventListener("click", () => { activeTab = t.id; render(lastGroups); });
+      return b;
+    }));
+    const tab = tabs.find(t => t.id === activeTab);
+    const sections = groups.map(g => {
+      const items = g.items.filter(tab.test);
+      if (!items.length) return null;
       const s = el("section");
       s.append(el("h2", "group-label", "No. " + g.label));
       const ul = el("ul");
-      ul.append(...g.items.map(renderItem));
+      ul.append(...items.map(renderItem));
       s.append(ul);
       return s;
-    }));
+    }).filter(Boolean);
+    document.getElementById("menu").replaceChildren(
+      ...(sections.length ? sections : [el("p", "loading", "目前沒有符合的品項")]));
   }
 
   function setStatus(text) { document.getElementById("status").textContent = text; }
@@ -452,11 +509,17 @@
       const rows = parseCSV(await res.text());
       // gviz silently returns the first tab when 介紹 doesn't exist; require its header.
       if (!rows.some(r => (r[0] || "").trim() === "蛋糕名稱" && (r[1] || "").trim() === "介紹")) return;
-      const map = {};
-      for (const [name = "", desc = ""] of rows) {
-        if (name.trim() && desc.trim() && name.trim() !== "蛋糕名稱") map[name.trim()] = desc.trim();
+           const map = {}, tagMap = {};
+      for (const [name = "", desc = "", tag = ""] of rows) {
+        const n = name.trim();
+        if (!n || n === "蛋糕名稱") continue;
+        if (desc.trim()) map[n] = desc.trim();
+        const t = tag.split(/[,，、;；]/).map(s => s.trim()).filter(Boolean);
+        if (t.length) tagMap[n] = t;
       }
       sheetDescriptions = map;
+      sheetTags = tagMap;
+      if (lastGroups.length) render(lastGroups);
     } catch (err) {}
   }
 
