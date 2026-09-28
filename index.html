@@ -454,6 +454,21 @@
     return [...BASE_TABS, ...tags.map(t => ({ id: "tag:" + t, label: t, test: ([name]) => tagsOf(name).includes(t) }))];
   }
 
+    const SOLDOUT_LAST = true; // true：售完的排到最下面；false：完全照 Sheet 順序
+
+  // 把所有區塊合併成一條清單；同名蛋糕合併，剩餘個數相加
+  function flatten(groups) {
+    const map = new Map();
+    const num = v => (v === "" || Number.isNaN(Number(v))) ? null : Number(v);
+    for (const g of groups) for (const [name, qty] of g.items) {
+      const prev = map.get(name);
+      if (!prev) { map.set(name, [name, qty]); continue; }
+      const b = num(qty);
+      if (b !== null) prev[1] = String((num(prev[1]) ?? 0) + b);
+    }
+    return [...map.values()];
+  }
+
   function render(groups) {
     lastGroups = groups;
     const tabs = buildTabs(groups);
@@ -467,18 +482,14 @@
       return b;
     }));
     const tab = tabs.find(t => t.id === activeTab);
-    const sections = groups.map(g => {
-      const items = g.items.filter(tab.test);
-      if (!items.length) return null;
-      const s = el("section");
-      s.append(el("h2", "group-label", "No. " + g.label));
-      const ul = el("ul");
-      ul.append(...items.map(renderItem));
-      s.append(ul);
-      return s;
-    }).filter(Boolean);
+    const items = flatten(groups).filter(tab.test);
+    // 有貨 → 請洽店員 → 售完（同等級維持原本順序）
+    const rank = ([, qty]) => ({ "": 0, last: 0, unknown: 1, soldout: 2 }[stockNodes(qty).state]);
+    if (SOLDOUT_LAST) items.sort((x, y) => rank(x) - rank(y));
+    const ul = el("ul");
+    ul.append(...items.map(renderItem));
     document.getElementById("menu").replaceChildren(
-      ...(sections.length ? sections : [el("p", "loading", "目前沒有符合的品項")]));
+      items.length ? ul : el("p", "loading", "目前沒有符合的品項"));
   }
 
   function setStatus(text) { document.getElementById("status").textContent = text; }
